@@ -1,5 +1,5 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs');  //
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { verifyToken } = require('../middleware/authMiddleware');
@@ -10,16 +10,18 @@ const router = express.Router();
 router.post('/register', async (req, res) => {
   const { username, password } = req.body;
 
-  // Issue: Password should be hashed before saving
-  const newUser = new User({
-    username,
-    password, // Not hashed
-  });
-
   try {
+    const hashedPassword = await bcrypt.hash(password, 10); //
+
+    const newUser = new User({
+      username,
+      password: hashedPassword,
+    });
+
     await newUser.save();
     res.status(201).send('User registered');
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Error registering user' });
   }
 });
@@ -28,16 +30,24 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
-  const user = await User.findOne({ username });
+  try {
+    const user = await User.findOne({ username });
 
-  // Issue: No password comparison (should hash password and compare)
-  if (!user || user.password !== password) { // Incorrect password check
-    return res.status(401).json({ message: 'Invalid credentials' });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ token });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error logging in' });
   }
-
-  const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-  res.json({ token });
 });
 
 module.exports = router;
